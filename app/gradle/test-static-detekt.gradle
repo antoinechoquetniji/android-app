@@ -1,0 +1,63 @@
+apply plugin: 'io.gitlab.arturbosch.detekt'
+
+///////////////////////////////////////////////////////////////////////////
+// DETEKT
+///////////////////////////////////////////////////////////////////////////
+
+dependencies {
+    // Detekt Ktlint
+    //noinspection GradleDependency
+    detekt "io.gitlab.arturbosch.detekt:detekt-cli:1.16.0"
+    //noinspection GradleDependency
+    detekt "io.gitlab.arturbosch.detekt:detekt-formatting:1.16.0"
+}
+
+// Settings
+detekt {
+    config = files("${rootProject.projectDir}/detekt-config.yml")
+    buildUponDefaultConfig = false
+    disableDefaultRuleSets = false
+    input = files(
+            "${project.projectDir}/src/main/java",
+            "${project.projectDir}/src/main/kotlin",
+            "${project.projectDir}/src/test/kotlin",
+            "${project.buildDir}/build/generated/source/kapt"
+    )
+    parallel = true
+    debug = false
+    autoCorrect = false
+    ignoreFailures = false
+//    ignoredBuildTypes = ["release", "Test"]                       // Android: Don't create tasks for the specified build types (e.g. "release")
+//    ignoredFlavors = ["prod","leMaineLibre","Push"]                       // Android: Don't create tasks for the specified build flavor (e.g. "production")
+    //    ignoredVariants = ["productionRelease"]
+    reports {
+        xml {
+            enabled = true
+// Enable/Disable XML report (default: true)
+            destination = file("${project.buildDir}/reports/detekt/detekt-report.xml")
+// Path where XML report will be stored (default: `build/reports/detekt/detekt.xml`)
+        }
+        html {
+            enabled = true
+            destination = file("${project.buildDir}/reports/detekt/detekt-report.html")
+        }
+    }
+}
+
+def version = "1" // Android version code, is not automatic because we cannot get if for module :o(
+def enableBaselineUpdate = false
+
+// Baseline only for Danger
+if (System.getenv('IsPR') || enableBaselineUpdate) {
+    detekt {
+        baseline = file("${project.projectDir}/baseline/detekt/detekt-baseline-v${version}.xml")
+    }
+}
+
+// To build a new base line for every module
+// Update the variable with the currentVersionCode
+// Enable temporary enableBaselineUpdate
+// Run a couple of time detektBaseline, until every module get updated, and is succeed
+// Disable temporary enableBaselineUpdate
+// Delete the previous baseline
+// Commit version update + baseline files
