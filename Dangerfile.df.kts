@@ -1,14 +1,16 @@
 @file:Repository("https://repo.maven.apache.org")
 @file:DependsOn("org.apache.commons:commons-text:1.6")
 @file:DependsOn("com.gianluz:danger-kotlin-android-lint-plugin:0.1.0")
-@file:DependsOn("io.github.ackeecz:danger-kotlin-detekt:0.1.4")
+@file:DependsOn("danger-kotlin-detekt-0.1.4-all.jar")
 
+import com.gianluz.dangerkotlin.androidlint.AndroidLint
+import com.gianluz.dangerkotlin.androidlint.androidLint
 import io.github.ackeecz.danger.detekt.DetektPlugin
-import com.gianluz.dangerkotlin.androidlint.*
+import io.github.ackeecz.danger.detekt.detekt
 import systems.danger.kotlin.*
+import java.io.File
 import java.nio.file.Files
 import java.nio.file.Paths
-import java.util.function.BiPredicate
 import java.util.stream.Collectors
 
 register plugin DetektPlugin
@@ -20,7 +22,6 @@ danger(args) {
     val sourceChanges = allSourceFiles.firstOrNull { it.contains("src") }
 
     onGitHub {
-
         // Changelog
         if (!changelogChanged && sourceChanges != null) {
             warn("Any changes to code should be reflected in the Changelog.")
@@ -37,36 +38,54 @@ danger(args) {
         }
     }
 
-}
-
-val detektReports = Files.find(Paths.get(""), 10, BiPredicate { path, attributes ->
-    val fileName = path.toFile().name
-    fileName.endsWith("detekt.xml")
-}).map { it.toFile() }.collect(Collectors.toList())
-
-DetektPlugin.parseAndReport(*detektReports.toTypedArray())
-
-androidLint {
-    // Fail for each Fatal in a single module
-    val moduleLintFilePaths = find(
+    androidLint {
+        // Fail for each Fatal in a single module
+        val moduleLintFilePaths = find(
             "app/build/reports/",
             "lint-results.xml",
             "lint-results-debug.xml",
             "lint-results-release.xml"
-    ).toTypedArray()
+        ).toTypedArray()
 
-    parseAllDistinct(*moduleLintFilePaths).forEach {
-        if(it.severity == "Fatal" || it.severity == "Error")
-            fail(
-                    "Danger lint check failed: ${it.message}",
-                    it.location.file.replace(System.getProperty("user.dir"), ""),
-                    Integer.parseInt(it.location.line)
+        parseAllDistinct(*moduleLintFilePaths).forEach {
+            val fileRelativePath = it.location.file.replace(
+                "${System.getProperty("user.dir")}/",
+                ""
             )
-        if(it.severity == "Warning")
-            warn(
-                    "Danger lint check failed: ${it.message}",
-                    it.location.file.replace(System.getProperty("user.dir"), ""),
-                    Integer.parseInt(it.location.line)
-            )
+            val line = Integer.parseInt(it.location.line)
+            if (allSourceFiles.contains(fileRelativePath)) {
+                if (it.severity == "Fatal" || it.severity == "Error") {
+                    fail("Danger lint check failed: ${it.message}", fileRelativePath, line)
+                } else if (it.severity == "Warning") {
+                    warn("Danger lint check failed: ${it.message}", fileRelativePath, line)
+                }
+            }
+        }
+    }
+
+    detekt {
+        val detektReportFiles = Files.find(Paths.get(""), 10, { path, _ ->
+            path.toFile().name.endsWith("detekt-report.xml")
+        }).map { it.toFile() }.collect(Collectors.toList())
+        val detektReports = parseFiles(*detektReportFiles.toTypedArray())
+        detektReports.forEach { detektReport ->
+            detektReport.files.forEach { file ->
+                val realFile = File(file.name)
+                val filePath = realFile.absolutePath.removePrefix(
+                    "${File("").absolutePath}/"
+                )
+                if (allSourceFiles.contains(filePath)) {
+                    file.errors.forEach { error ->
+                        val line = error.line.toIntOrNull() ?: 0
+                        val message = "Detekt: ${error.message}, rule: ${error.source}"
+                        warn(
+                            message = message,
+                            file = filePath,
+                            line = line
+                        )
+                    }
+                }
+            }
+        }
     }
 }
